@@ -1,0 +1,11 @@
+{
+  "name": "Purrductive",
+  "short_name": "Purrductive",
+  "description": "Private screen-time clarity with a persuasive cat.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4efe7",
+  "theme_color": "#f4efe7",
+  "icons": []
+}
+
