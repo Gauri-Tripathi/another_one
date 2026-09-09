@@ -16,24 +16,36 @@ function localDay(date = new Date()) {
 class ActivityStore {
   constructor(directory) {
     this.file = path.join(directory, "purrductive-data.json");
-    this.data = { version: 1, settings: DEFAULT_SETTINGS, learnedRules: [], segments: [], sittingSeconds: 0 };
+    this.backupFile = path.join(directory, "purrductive-data.backup.json");
+    this.data = { version: 1, settings: DEFAULT_SETTINGS, learnedRules: [], segments: [], sittingSeconds: 0, lastActivityAt: null, updatedAt: null };
     this.load();
   }
 
   load() {
-    try {
-      const saved = JSON.parse(fs.readFileSync(this.file, "utf8"));
-      this.data = { ...this.data, ...saved, settings: { ...DEFAULT_SETTINGS, ...saved.settings, sync: { ...DEFAULT_SETTINGS.sync, ...saved.settings?.sync } } };
-    } catch (error) {
-      if (error.code !== "ENOENT") console.error("Could not read tracker store:", error.message);
+    for (const candidate of [this.file, this.backupFile]) {
+      try {
+        const saved = JSON.parse(fs.readFileSync(candidate, "utf8"));
+        this.data = { ...this.data, ...saved, settings: { ...DEFAULT_SETTINGS, ...saved.settings, sync: { ...DEFAULT_SETTINGS.sync, ...saved.settings?.sync } } };
+        if (this.data.lastActivityAt && Date.now() - new Date(this.data.lastActivityAt).getTime() >= 300000) this.data.sittingSeconds = 0;
+        return;
+      } catch (error) {
+        if (error.code !== "ENOENT") console.error(`Could not read ${path.basename(candidate)}:`, error.message);
+      }
     }
   }
 
   persist() {
     const temporary = `${this.file}.tmp`;
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
+    this.data.updatedAt = new Date().toISOString();
     fs.writeFileSync(temporary, JSON.stringify(this.data, null, 2));
-    fs.renameSync(temporary, this.file);
+    if (fs.existsSync(this.file)) fs.copyFileSync(this.file, this.backupFile);
+    try {
+      fs.renameSync(temporary, this.file);
+    } catch {
+      fs.copyFileSync(temporary, this.file);
+      fs.unlinkSync(temporary);
+    }
   }
 
   addSample(sample, seconds, classification, deviceId) {
@@ -55,6 +67,7 @@ class ActivityStore {
       });
     }
     this.data.sittingSeconds += seconds;
+    this.data.lastActivityAt = now.toISOString();
   }
 
   today() {

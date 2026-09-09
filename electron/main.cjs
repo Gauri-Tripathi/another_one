@@ -16,6 +16,8 @@ let activeApp = "Starting tracker…";
 let quitting = false;
 const deviceId = `${os.hostname()}-${process.platform}`.toLowerCase().replace(/[^a-z0-9-]/g, "-");
 
+if (!app.requestSingleInstanceLock()) app.exit(0);
+
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
 function appAsset(name) {
@@ -40,7 +42,13 @@ function createMainWindow() {
   });
   loadRenderer(mainWindow);
   mainWindow.once("ready-to-show", () => mainWindow.show());
-  mainWindow.on("close", event => { if (!quitting) { event.preventDefault(); mainWindow.hide(); } });
+  mainWindow.on("close", event => {
+    if (!quitting) {
+      event.preventDefault();
+      store.persist();
+      mainWindow.hide();
+    }
+  });
 }
 
 function showBreakWindow() {
@@ -113,6 +121,13 @@ app.whenReady().then(() => {
   sampleActivity();
   powerMonitor.on("suspend", () => store.persist());
   powerMonitor.on("lock-screen", () => store.persist());
+});
+
+app.on("second-instance", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
 });
 
 ipcMain.handle("tracker:snapshot", () => ({

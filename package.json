@@ -1,6 +1,6 @@
 {
   "name": "purrductive",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "author": "Purrductive",
   "description": "A local-first screen-time tracker with a very persuasive cat.",
