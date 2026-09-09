@@ -16,7 +16,7 @@ Purrductive does **not** capture screenshots or keystrokes. Window titles can co
 
 ## Run the desktop app
 
-The ready-to-use Windows installer is `release/Purrductive Setup 0.1.0.exe`. Because this is a local development build and has no paid code-signing certificate, Windows SmartScreen may show an **Unknown publisher** warning.
+The ready-to-use Windows installer is `release/Purrductive Setup 0.1.1.exe`. Because this is a local development build and has no paid code-signing certificate, Windows SmartScreen may show an **Unknown publisher** warning.
 
 ```powershell
 npm install
