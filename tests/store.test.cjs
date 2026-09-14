@@ -17,12 +17,33 @@ test("activity survives repeated checkpoints and a restart", () => {
     );
     original.persist();
     original.persist();
+    original.data.paused = true;
+    original.persist();
 
     const restarted = new ActivityStore(directory);
     assert.equal(restarted.data.segments.length, 1);
     assert.equal(restarted.data.segments[0].seconds, 15);
     assert.equal(restarted.data.segments[0].appName, "Code");
+    assert.equal(restarted.data.paused, true);
     assert.ok(fs.existsSync(path.join(directory, "purrductive-data.backup.json")));
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("CSV export safely quotes window titles", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "purrductive-csv-"));
+  try {
+    const store = new ActivityStore(directory);
+    store.addSample(
+      { appName: "Excel", windowTitle: 'Budget, "final"' },
+      30,
+      { category: "productive", confidence: .95, reason: "Work app" },
+      "test-device"
+    );
+    const csv = store.toCsv();
+    assert.match(csv, /"Budget, ""final"""/);
+    assert.match(csv, /"productive"/);
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

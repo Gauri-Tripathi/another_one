@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, powerMonitor, Tray, Menu, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, powerMonitor, Tray, Menu, nativeImage, dialog, shell } = require("electron");
 const { execFile } = require("node:child_process");
 const path = require("node:path");
 const os = require("node:os");
@@ -38,9 +38,10 @@ function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1400, height: 900, minWidth: 1040, minHeight: 700, backgroundColor: "#f4efe7",
     title: "Purrductive", show: false,
-    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false }
+    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
   });
   loadRenderer(mainWindow);
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.once("ready-to-show", () => mainWindow.show());
   mainWindow.on("close", event => {
     if (!quitting) {
@@ -85,6 +86,10 @@ async function sampleActivity() {
   const now = Date.now();
   const elapsed = Math.max(1, Math.min(10, Math.round((now - lastSampleAt) / 1000)));
   lastSampleAt = now;
+  if (store.data.paused) {
+    activeApp = "Paused";
+    return;
+  }
   if (powerMonitor.getSystemIdleTime() >= store.data.settings.idleThresholdSeconds) {
     activeApp = "Idle";
     if (powerMonitor.getSystemIdleTime() >= 300) store.data.sittingSeconds = 0;
@@ -98,21 +103,37 @@ async function sampleActivity() {
   if (store.data.sittingSeconds >= store.data.settings.breakIntervalSeconds) showBreakWindow();
 }
 
-function setupTray() {
-  const icon = nativeImage.createFromPath(appAsset("cat-coach.png")).resize({ width: 18, height: 18 });
-  tray = new Tray(icon);
-  tray.setToolTip("Purrductive is tracking active time");
+function refreshTrayMenu() {
+  if (!tray) return;
+  tray.setToolTip(store.data.paused ? "Purrductive is paused" : "Purrductive is tracking active time");
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open dashboard", click: () => { mainWindow.show(); mainWindow.focus(); } },
+    { label: store.data.paused ? "Resume tracking" : "Pause tracking", click: toggleTracking },
     { label: "Take a movement break", click: showBreakWindow },
     { type: "separator" },
     { label: "Quit Purrductive", click: () => { quitting = true; app.quit(); } }
   ]));
+}
+
+function setupTray() {
+  const icon = nativeImage.createFromPath(appAsset("cat-coach.png")).resize({ width: 18, height: 18 });
+  tray = new Tray(icon);
+  refreshTrayMenu();
   tray.on("double-click", () => mainWindow.show());
+}
+
+function toggleTracking() {
+  store.data.paused = !store.data.paused;
+  activeApp = store.data.paused ? "Paused" : "Resuming…";
+  lastSampleAt = Date.now();
+  store.persist();
+  refreshTrayMenu();
+  return store.data.paused;
 }
 
 app.whenReady().then(() => {
   store = new ActivityStore(app.getPath("userData"));
+  Menu.setApplicationMenu(null);
   createMainWindow();
   setupTray();
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: store.data.settings.launchAtLogin, path: app.getPath("exe") });
@@ -132,8 +153,10 @@ app.on("second-instance", () => {
 
 ipcMain.handle("tracker:snapshot", () => ({
   segments: store.recent(), settings: store.data.settings,
-  live: { activeApp, sittingSeconds: store.data.sittingSeconds, nextBreakIn: Math.max(0, store.data.settings.breakIntervalSeconds - store.data.sittingSeconds) }
+  live: { activeApp, paused: Boolean(store.data.paused), sittingSeconds: store.data.sittingSeconds, nextBreakIn: Math.max(0, store.data.settings.breakIntervalSeconds - store.data.sittingSeconds), lastSavedAt: store.data.updatedAt }
 }));
+
+ipcMain.handle("tracker:toggle", () => toggleTracking());
 
 ipcMain.handle("tracker:recategorize", (_event, { id, category }) => {
   if (!["productive", "distraction", "neutral"].includes(category)) return false;
@@ -166,6 +189,24 @@ ipcMain.handle("break:acknowledge", () => {
   store.persist();
   if (breakWindow && !breakWindow.isDestroyed()) breakWindow.close();
   return true;
+});
+
+ipcMain.handle("data:export", async () => {
+  const date = new Date().toISOString().slice(0, 10);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "Export Purrductive activity",
+    defaultPath: path.join(app.getPath("documents"), `purrductive-${date}.csv`),
+    filters: [{ name: "CSV spreadsheet", extensions: ["csv"] }]
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  require("node:fs").writeFileSync(result.filePath, store.toCsv(), "utf8");
+  return { canceled: false, filePath: result.filePath };
+});
+
+ipcMain.handle("data:reveal", () => {
+  store.persist();
+  shell.showItemInFolder(store.file);
+  return store.file;
 });
 
 app.on("before-quit", () => {

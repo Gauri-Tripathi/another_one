@@ -10,13 +10,16 @@ A Windows-first, local-first screen-time tracker with an opinionated orange move
 - Learns from manual recategorization.
 - Opens an always-on-top, full-screen, loudly purring cat after two hours of active sitting.
 - Runs in the system tray and can launch with Windows.
+- Can be paused/resumed from the dashboard or tray without losing the day.
+- Exports the complete activity log to CSV and exposes its local backup.
+- Lets you open any day in History to inspect its app breakdown.
 - Builds as a responsive PWA; optional Supabase sync makes the dashboard available on a phone.
 
 Purrductive does **not** capture screenshots or keystrokes. Window titles can contain private information, so mobile sync is off until you configure it.
 
 ## Run the desktop app
 
-The ready-to-use Windows installer is `release/Purrductive Setup 0.1.2.exe`. Because this is a local development build and has no paid code-signing certificate, Windows SmartScreen may show an **Unknown publisher** warning.
+The ready-to-use Windows installer is `release/Purrductive Setup 0.2.0.exe`. Because this is a local development build and has no paid code-signing certificate, Windows SmartScreen may show an **Unknown publisher** warning.
 
 ```powershell
 npm install

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { ArrowLeft, Cloud, LogIn, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Cloud, Database, Download, FolderOpen, LogIn, ShieldCheck } from "lucide-react";
 import { makeSupabase } from "../lib/sync";
 
 export default function Settings({ current, onSave, onBack }) {
@@ -7,6 +7,7 @@ export default function Settings({ current, onSave, onBack }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
+  const [dataMessage, setDataMessage] = useState("");
   const client = useMemo(() => makeSupabase(settings.sync), [settings.sync.url, settings.sync.key]);
   const patch = values => setSettings(value => ({ ...value, ...values }));
   const patchSync = values => setSettings(value => ({ ...value, sync: { ...value.sync, ...values } }));
@@ -18,6 +19,11 @@ export default function Settings({ current, onSave, onBack }) {
       ? await client.auth.signUp({ email, password })
       : await client.auth.signInWithPassword({ email, password });
     setMessage(result.error ? result.error.message : mode === "signup" ? "Check your email, then sign in." : "Connected. Your next sync will run shortly.");
+  };
+
+  const exportData = async () => {
+    const result = await window.purrductive.exportCsv();
+    setDataMessage(result.canceled ? "Export cancelled." : `Saved to ${result.filePath}`);
   };
 
   return <div className="settings-page">
@@ -40,8 +46,13 @@ export default function Settings({ current, onSave, onBack }) {
         <div className="button-row"><button onClick={() => signIn("signin")}><LogIn size={16}/> Sign in</button><button className="quiet" onClick={() => signIn("signup")}>Create account</button></div>
         {message && <p className="status-message">{message}</p>}
       </section>
+      {window.purrductive && <section className="settings-card data-card">
+        <div className="settings-title"><span><Database/></span><div><h2>Your data</h2><p>Portable, inspectable, and yours to keep.</p></div></div>
+        <p className="data-copy">Export every saved activity segment as a CSV spreadsheet, or open the private local data file and its automatic backup.</p>
+        <div className="button-row"><button onClick={exportData}><Download size={16}/> Export CSV</button><button className="quiet" onClick={() => window.purrductive.revealData()}><FolderOpen size={16}/> Show data file</button></div>
+        {dataMessage && <p className="status-message data-message">{dataMessage}</p>}
+      </section>}
     </div>
     <button className="primary-button save-settings" onClick={() => onSave(settings)}>Save settings <span>→</span></button>
   </div>;
 }
-

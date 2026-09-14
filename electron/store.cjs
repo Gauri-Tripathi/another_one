@@ -17,7 +17,7 @@ class ActivityStore {
   constructor(directory) {
     this.file = path.join(directory, "purrductive-data.json");
     this.backupFile = path.join(directory, "purrductive-data.backup.json");
-    this.data = { version: 1, settings: DEFAULT_SETTINGS, learnedRules: [], segments: [], sittingSeconds: 0, lastActivityAt: null, updatedAt: null };
+    this.data = { version: 1, settings: DEFAULT_SETTINGS, learnedRules: [], segments: [], sittingSeconds: 0, paused: false, lastActivityAt: null, updatedAt: null };
     this.load();
   }
 
@@ -76,6 +76,13 @@ class ActivityStore {
   }
 
   recent() { return [...this.data.segments].sort((a, b) => b.endedAt.localeCompare(a.endedAt)); }
+
+  toCsv() {
+    const escape = value => `"${String(value ?? "").replaceAll('"', '""')}"`;
+    const header = ["started_at", "ended_at", "seconds", "app", "window_title", "category", "confidence", "reason", "manual"];
+    const rows = this.recent().map(item => [item.startedAt, item.endedAt, item.seconds, item.appName, item.windowTitle, item.category, item.confidence, item.reason, item.manual]);
+    return [header, ...rows].map(row => row.map(escape).join(",")).join("\r\n");
+  }
 }
 
 module.exports = { ActivityStore, DEFAULT_SETTINGS };
