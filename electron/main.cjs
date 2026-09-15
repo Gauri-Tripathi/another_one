@@ -1,9 +1,17 @@
 const { app, BrowserWindow, ipcMain, powerMonitor, Tray, Menu, nativeImage, dialog, shell } = require("electron");
-const { execFile } = require("node:child_process");
+const { ForegroundReader } = require("./foreground.cjs");
+const foreground = new ForegroundReader();
+let sampling = false;
+let suspended = false;
+let locked = false;
+let trackingError = null;
+let generation = 0;
 const path = require("node:path");
 const os = require("node:os");
 const { ActivityStore } = require("./store.cjs");
 const { classifyActivity, createLearnedRule } = require("./classifier.cjs");
+const { websiteFromSample, BROWSERS } = require("./website.cjs");
+let websiteStatus = "Open a browser to detect its active website.";
 
 let mainWindow;
 let breakWindow;
@@ -64,41 +72,37 @@ function showBreakWindow() {
 }
 
 function queryActiveWindow() {
-  return new Promise(resolve => {
-    if (process.platform !== "win32") return resolve({ appName: "Unsupported platform", windowTitle: "Windows tracking is currently enabled" });
-    const script = [
-      "$sig='[DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);'",
-      "Add-Type -MemberDefinition $sig -Name NativeMethods -Namespace Purrductive -ErrorAction SilentlyContinue",
-      "$handle=[Purrductive.NativeMethods]::GetForegroundWindow()",
-      "$processId=0",
-      "[void][Purrductive.NativeMethods]::GetWindowThreadProcessId($handle,[ref]$processId)",
-      "$process=Get-Process -Id $processId -ErrorAction SilentlyContinue",
-      "@{appName=$process.ProcessName;windowTitle=$process.MainWindowTitle}|ConvertTo-Json -Compress"
-    ].join(";");
-    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, timeout: 4000 }, (error, stdout) => {
-      if (error) return resolve(null);
-      try { resolve(JSON.parse(stdout.trim())); } catch { resolve(null); }
-    });
-  });
+  return foreground.read();
 }
 
 async function sampleActivity() {
+  if (sampling) return;
   const now = Date.now();
   const elapsed = Math.max(1, Math.min(10, Math.round((now - lastSampleAt) / 1000)));
   lastSampleAt = now;
+  if (suspended || locked) return;
   if (store.data.paused) {
     activeApp = "Paused";
     return;
   }
   if (powerMonitor.getSystemIdleTime() >= store.data.settings.idleThresholdSeconds) {
+    store.endSession();
     activeApp = "Idle";
     if (powerMonitor.getSystemIdleTime() >= 300) store.data.sittingSeconds = 0;
     return;
   }
-  const sample = await queryActiveWindow();
-  if (!sample?.appName || sample.appName.toLowerCase() === "purrductive") return;
+  sampling = true;
+  const requestGeneration = generation;
+  let sample;
+  try { sample = await queryActiveWindow(); } finally { sampling = false; }
+  if (requestGeneration !== generation || quitting || suspended || locked || store.data.paused) return;
+  trackingError = sample ? null : "Cannot read the active window. Retrying automatically.";
+  if (!sample?.appName || sample.appName.toLowerCase() === "purrductive") { store.endSession(); return; }
   activeApp = sample.appName;
+  const website = websiteFromSample(sample);
+  if (BROWSERS.has(sample.appName.toLowerCase())) websiteStatus = website ? "Reading browser address bar" : "Address bar unavailable. Browser app time still counts.";
   const classification = classifyActivity(sample.appName, sample.windowTitle, store.data.learnedRules);
+  if (classification.category === "neutral" && website) Object.assign(classification, classifyActivity(sample.appName, website, []));
   store.addSample(sample, elapsed, classification, deviceId);
   if (store.data.sittingSeconds >= store.data.settings.breakIntervalSeconds) showBreakWindow();
 }
@@ -123,6 +127,8 @@ function setupTray() {
 }
 
 function toggleTracking() {
+  store.endSession();
+  generation++;
   store.data.paused = !store.data.paused;
   activeApp = store.data.paused ? "Paused" : "Resuming…";
   lastSampleAt = Date.now();
@@ -140,8 +146,10 @@ app.whenReady().then(() => {
   sampleTimer = setInterval(sampleActivity, 5000);
   persistTimer = setInterval(() => store.persist(), 15000);
   sampleActivity();
-  powerMonitor.on("suspend", () => store.persist());
-  powerMonitor.on("lock-screen", () => store.persist());
+  powerMonitor.on("suspend", () => { suspended = true; generation++; foreground.stop(); store.endSession(); store.persist(); });
+  powerMonitor.on("lock-screen", () => { locked = true; generation++; store.endSession(); store.persist(); });
+  powerMonitor.on("resume", () => { suspended = false; lastSampleAt = Date.now(); store.data.sittingSeconds = 0; });
+  powerMonitor.on("unlock-screen", () => { locked = false; lastSampleAt = Date.now(); });
 });
 
 app.on("second-instance", () => {
@@ -153,7 +161,7 @@ app.on("second-instance", () => {
 
 ipcMain.handle("tracker:snapshot", () => ({
   segments: store.recent(), settings: store.data.settings,
-  live: { activeApp, paused: Boolean(store.data.paused), sittingSeconds: store.data.sittingSeconds, nextBreakIn: Math.max(0, store.data.settings.breakIntervalSeconds - store.data.sittingSeconds), lastSavedAt: store.data.updatedAt }
+  live: { activeApp, trackingError, websiteStatus, paused: Boolean(store.data.paused), sittingSeconds: store.data.sittingSeconds, nextBreakIn: Math.max(0, store.data.settings.breakIntervalSeconds - store.data.sittingSeconds), lastSavedAt: store.data.updatedAt }
 }));
 
 ipcMain.handle("tracker:toggle", () => toggleTracking());
@@ -163,8 +171,8 @@ ipcMain.handle("tracker:recategorize", (_event, { id, category }) => {
   const segment = store.data.segments.find(item => item.id === id);
   if (!segment) return false;
   const rule = createLearnedRule(segment, category);
-  const existing = store.data.learnedRules.find(item => item.appName.toLowerCase() === rule.appName.toLowerCase() && item.category === category && item.tokens.some(token => rule.tokens.includes(token)));
-  if (existing) { existing.weight = Math.min(5, existing.weight + 1); existing.updatedAt = rule.updatedAt; }
+  const existing = store.data.learnedRules.find(item => item.appName.toLowerCase() === rule.appName.toLowerCase() && item.windowTitle === rule.windowTitle);
+  if (existing) { Object.assign(existing, rule, { weight: Math.min(5, existing.weight + 1) }); }
   else store.data.learnedRules.push(rule);
   Object.assign(segment, { category, confidence: 1, reason: "You taught me this", manual: true });
   store.persist();
@@ -211,6 +219,7 @@ ipcMain.handle("data:reveal", () => {
 
 app.on("before-quit", () => {
   quitting = true;
+  foreground.stop();
   clearInterval(sampleTimer); clearInterval(persistTimer);
   if (store) store.persist();
 });

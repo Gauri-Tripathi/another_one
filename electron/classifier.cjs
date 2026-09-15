@@ -11,6 +11,8 @@ function classifyActivity(appName, windowTitle, learnedRules = []) {
   const app = String(appName || "").toLowerCase();
   const title = String(windowTitle || "").toLowerCase();
   const tokens = tokenize(title);
+  const exact = learnedRules.filter(rule => rule.appName.toLowerCase() === app && rule.windowTitle === title).at(-1);
+  if (exact) return { category: exact.category, confidence: 1, reason: "Your correction for this activity" };
   const learned = learnedRules
     .filter(rule => rule.appName.toLowerCase() === app && rule.tokens.some(token => tokens.includes(token)))
     .sort((a, b) => b.weight - a.weight)[0];
@@ -28,8 +30,7 @@ function classifyActivity(appName, windowTitle, learnedRules = []) {
 
 function createLearnedRule(segment, category) {
   const tokens = tokenize(segment.windowTitle).slice(0, 5);
-  return { appName: String(segment.appName || "Unknown"), tokens, category, weight: 1, updatedAt: new Date().toISOString() };
+  return { appName: String(segment.appName || "Unknown"), windowTitle: String(segment.windowTitle || "").toLowerCase(), tokens, category, weight: 1, updatedAt: new Date().toISOString() };
 }
 
 module.exports = { classifyActivity, createLearnedRule, tokenize };
-

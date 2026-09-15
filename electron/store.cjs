@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { websiteFromSample } = require("./website.cjs");
 
 const DEFAULT_SETTINGS = {
   idleThresholdSeconds: 60,
@@ -51,10 +52,24 @@ class ActivityStore {
   addSample(sample, seconds, classification, deviceId) {
     const now = new Date();
     const today = localDay(now);
-    const oldest = localDay(new Date(Date.now() - 32 * 86400000));
-    this.data.segments = this.data.segments.filter(item => localDay(new Date(item.startedAt)) >= oldest);
+    if (this.prunedDay !== today) {
+      const oldest = localDay(new Date(Date.now() - 32 * 86400000));
+      this.data.segments = this.data.segments.filter(item => localDay(new Date(item.startedAt)) >= oldest);
+      this.prunedDay = today;
+    }
     const last = this.data.segments.at(-1);
-    const same = last && last.appName === sample.appName && last.windowTitle === sample.windowTitle && last.category === classification.category && !last.manual && localDay(new Date(last.startedAt)) === today;
+    const appKey = String(sample.appName).toLowerCase();
+    const website = websiteFromSample(sample);
+    if (this.activeApp !== appKey) {
+      this.appSessionId = crypto.randomUUID();
+      this.activeApp = appKey;
+      this.activeSite = null;
+    }
+    if (this.activeSite !== website) {
+      this.siteSessionId = website ? crypto.randomUUID() : null;
+      this.activeSite = website;
+    }
+    const same = last && last.appSessionId === this.appSessionId && last.website === website && last.siteSessionId === this.siteSessionId && now.getTime() - new Date(last.endedAt).getTime() <= 15000 && last.appName === sample.appName && last.windowTitle === sample.windowTitle && last.category === classification.category && !last.manual && localDay(new Date(last.startedAt)) === today;
     if (same) {
       last.endedAt = now.toISOString();
       last.seconds += seconds;
@@ -62,7 +77,7 @@ class ActivityStore {
       last.reason = classification.reason;
     } else {
       this.data.segments.push({
-        id: crypto.randomUUID(), deviceId, startedAt: new Date(now.getTime() - seconds * 1000).toISOString(), endedAt: now.toISOString(), seconds,
+        id: crypto.randomUUID(), deviceId, website, appSessionId: this.appSessionId, siteSessionId: this.siteSessionId || null, startedAt: new Date(now.getTime() - seconds * 1000).toISOString(), endedAt: now.toISOString(), seconds,
         appName: sample.appName || "Unknown", windowTitle: sample.windowTitle || "Untitled", ...classification, manual: false
       });
     }
@@ -75,12 +90,14 @@ class ActivityStore {
     return this.data.segments.filter(item => localDay(new Date(item.startedAt)) === today).sort((a, b) => b.endedAt.localeCompare(a.endedAt));
   }
 
+  endSession() { this.activeApp = null; this.activeSite = null; this.appSessionId = null; this.siteSessionId = null; }
+
   recent() { return [...this.data.segments].sort((a, b) => b.endedAt.localeCompare(a.endedAt)); }
 
   toCsv() {
     const escape = value => `"${String(value ?? "").replaceAll('"', '""')}"`;
-    const header = ["started_at", "ended_at", "seconds", "app", "window_title", "category", "confidence", "reason", "manual"];
-    const rows = this.recent().map(item => [item.startedAt, item.endedAt, item.seconds, item.appName, item.windowTitle, item.category, item.confidence, item.reason, item.manual]);
+    const header = ["started_at", "ended_at", "seconds", "app", "window_title", "category", "confidence", "reason", "manual", "website", "app_session", "website_session"];
+    const rows = this.recent().map(item => [item.startedAt, item.endedAt, item.seconds, item.appName, item.windowTitle, item.category, item.confidence, item.reason, item.manual, item.website, item.appSessionId, item.siteSessionId]);
     return [header, ...rows].map(row => row.map(escape).join(",")).join("\r\n");
   }
 }

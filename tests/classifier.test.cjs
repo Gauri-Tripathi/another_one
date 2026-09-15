@@ -2,6 +2,13 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { classifyActivity, createLearnedRule } = require("../electron/classifier.cjs");
 
+test("latest exact correction wins even when an older rule has more weight", () => {
+  const segment = { appName: "chrome", windowTitle: "YouTube research tutorial" };
+  const old = { ...createLearnedRule(segment, "distraction"), weight: 5 };
+  const corrected = createLearnedRule(segment, "productive");
+  assert.equal(classifyActivity(segment.appName, segment.windowTitle, [old, corrected]).category, "productive");
+});
+
 test("classifies development tools as productive", () => {
   assert.equal(classifyActivity("Code", "App.jsx", []).category, "productive");
 });
@@ -19,4 +26,3 @@ test("learned corrections beat generic signals", () => {
 test("leaves ambiguous activity unsorted", () => {
   assert.equal(classifyActivity("explorer", "Downloads", []).category, "neutral");
 });
-
