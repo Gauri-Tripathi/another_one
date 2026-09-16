@@ -1,8 +1,16 @@
 import { createClient } from "@supabase/supabase-js";
 
+let cachedClient;
+let cachedKey;
 export function makeSupabase(config) {
   if (!config?.url || !config?.key) return null;
-  return createClient(config.url, config.key, { auth: { persistSession: true } });
+  const key = JSON.stringify([config.url, config.key]);
+  if (cachedKey === key) return cachedClient;
+  try {
+    cachedClient = createClient(config.url, config.key, { auth: { persistSession: true } });
+    cachedKey = key;
+    return cachedClient;
+  } catch { return null; }
 }
 
 export async function pushSegments(client, segments) {
@@ -21,7 +29,10 @@ export async function pushSegments(client, segments) {
     category: s.category,
     confidence: s.confidence,
     reason: s.reason,
-    manual: Boolean(s.manual)
+    manual: Boolean(s.manual),
+    website: s.website || null,
+    app_session_id: s.appSessionId || null,
+    site_session_id: s.siteSessionId || null
   }));
   const { error } = await client.from("activity_segments").upsert(rows);
   if (error) throw error;
@@ -38,6 +49,7 @@ export async function pullRecent(client) {
   return (data || []).map(row => ({
     id: row.id, deviceId: row.device_id, startedAt: row.started_at, endedAt: row.ended_at,
     seconds: row.seconds, appName: row.app_name, windowTitle: row.window_title,
-    category: row.category, confidence: row.confidence, reason: row.reason, manual: row.manual
+    category: row.category, confidence: row.confidence, reason: row.reason, manual: row.manual,
+    website: row.website, appSessionId: row.app_session_id, siteSessionId: row.site_session_id
   }));
 }

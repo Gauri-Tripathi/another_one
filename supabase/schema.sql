@@ -11,6 +11,9 @@ create table if not exists public.activity_segments (
   confidence real not null default 0,
   reason text not null default '',
   manual boolean not null default false,
+  website text,
+  app_session_id uuid,
+  site_session_id uuid,
   updated_at timestamptz not null default now()
 );
 
@@ -31,4 +34,3 @@ with check (auth.uid() = user_id);
 
 create index if not exists activity_segments_user_started_idx
 on public.activity_segments (user_id, started_at desc);
-
