@@ -3,7 +3,8 @@ import { ArrowLeft, BarChart3, CalendarDays, Cloud, Pause, PawPrint, Play, Setti
 import BreakScreen from "./components/BreakScreen";
 import Setup from "./components/Setup";
 import Settings from "./components/Settings";
-import { demoSegments } from "./lib/demo";
+import FocusTimer from "./components/FocusTimer";
+import UsageReport from "./components/UsageReport";
 import { groupApps, groupDays, localDay, secondsToClock, summarize } from "./lib/time";
 import { makeSupabase, pullRecent, pushSegments } from "./lib/sync";
 
@@ -24,6 +25,15 @@ function savedLabel(value) {
 }
 
 function Dashboard({ user, segments, live, onCategory, onOpenSettings, onOpenHistory, onPreviewBreak, onToggleTracking }) {
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("all");
+  const [date, setDate] = useState(localDay());
+  const [limit, setLimit] = useState(20);
+  const filtered = useMemo(() => segments.filter(item =>
+    (!date || localDay(item.startedAt) === date) &&
+    (category === "all" || item.category === category) &&
+    `${item.appName} ${item.windowTitle}`.toLowerCase().includes(query.toLowerCase())
+  ), [segments, date, category, query]);
   const todaySegments = useMemo(() => segments.filter(item => localDay(item.startedAt) === localDay()), [segments]);
   const stats = useMemo(() => summarize(todaySegments), [todaySegments]);
   const apps = useMemo(() => groupApps(todaySegments).slice(0, 6), [todaySegments]);
@@ -37,7 +47,7 @@ function Dashboard({ user, segments, live, onCategory, onOpenSettings, onOpenHis
     <aside>
       <div className="brand-mark"><PawPrint/><span>purrductive</span></div>
       <nav><button className="active"><BarChart3/>Today</button><button onClick={onOpenHistory}><CalendarDays/>History</button><button onClick={onOpenSettings}><SettingsIcon/>Settings</button></nav>
-      <div className="coach-card"><img src="./cat-coach.png" alt="Cat coach"/><p>Next stretch</p><strong>{live?.nextBreakIn ? secondsToClock(live.nextBreakIn) : "2h 00m"}</strong><button onClick={onPreviewBreak}>Test the cat</button></div>
+      <div className="coach-card"><img src="./cat-coach.png" alt="Cat coach"/><p>Next stretch</p><strong>{live?.nextBreakIn != null ? secondsToClock(live.nextBreakIn) : "2h 00m"}</strong><button onClick={onPreviewBreak}>Test the cat</button></div>
       <div className={`local-badge ${live?.paused ? "paused" : ""}`}><span/><div><b>{live ? live.paused ? "Tracking paused" : "Tracking locally" : "Mobile view"}</b><small>{live?.activeApp || "Synced dashboard"}</small></div></div>
     </aside>
     <main className="dashboard">
@@ -47,14 +57,25 @@ function Dashboard({ user, segments, live, onCategory, onOpenSettings, onOpenHis
         <article className="split-card"><div><span className="dot green"/><p>Productive</p><strong>{secondsToClock(stats.productive)}</strong></div><div><span className="dot coral"/><p>Distracted</p><strong>{secondsToClock(stats.distraction)}</strong></div><div><span className="dot grey"/><p>Unsorted</p><strong>{secondsToClock(stats.neutral)}</strong></div></article>
         <article className="focus-card"><Donut stats={stats}/><p>Based only on time Purrductive could confidently sort.</p></article>
       </section>
+      {live?.trackingError && <p className="error-banner" role="status">{live.trackingError}</p>}
+      <FocusTimer/>
+      <div className="cat-note"><img src="./cat-coach.png" alt="Your orange cat coach"/><div><span>YOUR TINY ACCOUNTABILITY DEPARTMENT</span><strong>A little focus. A little chaos. All accounted for.</strong><p>I'm keeping the receipts. You're still in charge.</p></div><PawPrint size={30}/></div>
+      <UsageReport segments={segments} live={live}/>
       <section className="content-grid">
         <article className="panel timeline-panel"><div className="panel-heading"><div><p className="eyebrow">WHERE THE DAY WENT</p><h2>Activity</h2></div><span>Click a label to teach the classifier</span></div>
-          <div className="activity-list">{todaySegments.length ? todaySegments.slice(0, 8).map(item => <div className="activity-row" key={item.id}>
+          <div className="activity-filters">
+            <input aria-label="Search activity" placeholder="Search apps or window titles..." value={query} onChange={e => { setQuery(e.target.value); setLimit(20); }}/>
+            <input aria-label="Activity date (clear for all dates)" type="date" value={date} onChange={e => { setDate(e.target.value); setLimit(20); }}/>
+            <select aria-label="Filter category" value={category} onChange={e => { setCategory(e.target.value); setLimit(20); }}><option value="all">All categories</option><option value="productive">Productive</option><option value="distraction">Distractions</option><option value="neutral">Needs review</option></select>
+            <button onClick={() => { setDate(""); setLimit(20); }}>All dates</button>
+          </div>
+          <div className="activity-list">{filtered.length ? filtered.slice(0, limit).map(item => <div className="activity-row" key={item.id}>
             <div className="app-icon">{(item.appName || "?").slice(0, 1)}</div><div className="activity-name"><strong>{item.appName}</strong><span>{item.windowTitle}</span></div>
             <div className="confidence">{Math.round((item.confidence || 0) * 100)}%<small>{item.reason}</small></div>
-            <select value={item.category} onChange={e => onCategory(item.id, e.target.value)} className={item.category}><option value="productive">Productive</option><option value="distraction">Distraction</option><option value="neutral">Unsorted</option></select>
+            <select aria-label={`Category for ${item.appName}`} value={item.category} onChange={e => onCategory(item.id, e.target.value)} className={item.category}><option value="productive">Productive</option><option value="distraction">Distraction</option><option value="neutral">Unsorted</option></select>
             <b className="duration">{secondsToClock(item.seconds)}</b>
-          </div>) : <div className="empty-activity"><PawPrint/><strong>{live?.paused ? "Tracking is paused" : "No activity yet"}</strong><span>{live?.paused ? "Resume when you want the clock running again." : "Use another app for a minute and your timeline will appear."}</span></div>}</div>
+          </div>) : <div className="empty-activity"><PawPrint/><strong>No matching activity</strong><span>Try another date, search, or category. New activity appears while tracking is running.</span></div>}</div>
+          <div className="activity-pagination"><span>{Math.min(limit, filtered.length)} of {filtered.length} entries</span>{limit < filtered.length && <button onClick={() => setLimit(n => n + 20)}>Show 20 more</button>}</div>
         </article>
         <article className="panel apps-panel"><div className="panel-heading"><div><p className="eyebrow">TOP APPS</p><h2>Attention map</h2></div></div>
           <div className="bars">{apps.map(app => <div className="bar-item" key={`${app.appName}-${app.category}`}><div><span>{app.appName}</span><b>{secondsToClock(app.seconds)}</b></div><div className="bar-track"><i className={app.category} style={{ width: `${Math.max(7, app.seconds / max * 100)}%` }}/></div></div>)}</div>
@@ -93,13 +114,15 @@ export default function App() {
   const [page, setPage] = useState("dashboard");
   const [name, setName] = useState(localStorage.getItem("purrductive-name") || "");
   const [onboarded, setOnboarded] = useState(localStorage.getItem("purrductive-onboarded") === "true");
-  const [segments, setSegments] = useState(window.purrductive ? [] : demoSegments);
+  const [segments, setSegments] = useState([]);
   const [live, setLive] = useState(null);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [error, setError] = useState("");
   const syncState = useRef({ segments: [], settings: DEFAULT_SETTINGS });
   syncState.current = { segments, settings };
 
   const refresh = async () => {
+    try {
     if (window.purrductive) {
       const snapshot = await window.purrductive.getSnapshot();
       setSegments(snapshot.segments || []); setLive(snapshot.live); setSettings(snapshot.settings || DEFAULT_SETTINGS);
@@ -107,8 +130,10 @@ export default function App() {
       const stored = JSON.parse(localStorage.getItem("purrductive-sync") || "null");
       if (stored) setSettings(value => ({ ...value, sync: stored }));
       const client = makeSupabase(stored);
-      if (client) try { const rows = await pullRecent(client); if (rows.length) setSegments(rows); } catch {}
+      if (client) { const rows = await pullRecent(client); setSegments(rows); }
     }
+    setError("");
+    } catch (failure) { setError(failure.message || "Could not refresh activity. Retrying shortly."); }
   };
   useEffect(() => { refresh(); const timer = setInterval(refresh, 5000); return () => clearInterval(timer); }, []);
   useEffect(() => {
@@ -128,13 +153,17 @@ export default function App() {
   if (page === "history") return <History segments={segments} onBack={() => setPage("dashboard")}/>;
 
   const recategorize = async (id, category) => {
-    setSegments(items => items.map(item => item.id === id ? { ...item, category, confidence: 1, reason: "You taught me this", manual: true } : item));
-    if (window.purrductive) await window.purrductive.recategorize(id, category);
+    if (!window.purrductive) { setError("Change activity categories on your desktop."); return; }
+    try {
+      const saved = await window.purrductive.recategorize(id, category);
+      if (!saved) throw new Error("This activity could not be updated.");
+      setSegments(items => items.map(item => item.id === id ? { ...item, category, confidence: 1, reason: "You taught me this", manual: true } : item));
+    } catch (failure) { setError(failure.message); }
   };
   const toggleTracking = async () => {
     if (!window.purrductive) return;
     const paused = await window.purrductive.toggleTracking();
     setLive(value => ({ ...value, paused, activeApp: paused ? "Paused" : "Resuming…" }));
   };
-  return <Dashboard user={name} segments={segments} live={live} onCategory={recategorize} onOpenSettings={() => setPage("settings")} onOpenHistory={() => setPage("history")} onPreviewBreak={() => setPreviewBreak(true)} onToggleTracking={toggleTracking}/>;
+  return <>{error && <p className="error-banner" role="alert">{error}</p>}<Dashboard user={name} segments={segments} live={live} onCategory={recategorize} onOpenSettings={() => setPage("settings")} onOpenHistory={() => setPage("history")} onPreviewBreak={() => setPreviewBreak(true)} onToggleTracking={toggleTracking}/></>;
 }

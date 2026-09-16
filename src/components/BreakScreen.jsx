@@ -35,7 +35,7 @@ function startPurr() {
   lfoGain.gain.value = .28;
   lfo.connect(lfoGain).connect(pulse.gain);
   noise.start(); oscillator.start(); lfo.start();
-  return () => ctx.close();
+  return () => { if (ctx.state !== "closed") ctx.close().catch(() => {}); };
 }
 
 export default function BreakScreen({ preview = false, onClose }) {
@@ -57,7 +57,7 @@ export default function BreakScreen({ preview = false, onClose }) {
 
   return <main className={`break-screen ${closing ? "is-closing" : ""}`}>
     <div className="break-noise" />
-    <p className="break-eyebrow">2 hours. no negotiations.</p>
+    <p className="break-eyebrow">Time for a movement break.</p>
     <img className="break-cat" src="./cat-coach.png" alt="A fluffy orange cat raising one paw" />
     <section className="break-copy">
       <h1>Move your ass, babe.</h1>
