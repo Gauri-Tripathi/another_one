@@ -10,6 +10,7 @@ export function localDay(value = new Date()) {
 }
 
 export function secondsToClock(value = 0) {
+  if (value > 0 && value < 60) return `${Math.round(value)}s`;
   const minutes = Math.max(0, Math.round(value / 60));
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;

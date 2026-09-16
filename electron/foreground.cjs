@@ -24,6 +24,8 @@ while ($null -ne [Console]::ReadLine()) {
     $caption = New-Object System.Text.StringBuilder 4096
     [void][Foreground]::GetWindowText($handle, $caption, 4096)
     $process = Get-Process -Id $foregroundId -ErrorAction Stop
+    $executablePath = $null
+    try { $executablePath = $process.MainModule.FileName } catch {}
     $address = $null
     if ($process.ProcessName -in @('chrome','msedge','brave','firefox','opera','vivaldi','arc')) {
       try {
@@ -41,7 +43,7 @@ while ($null -ne [Console]::ReadLine()) {
         }
       } catch {}
     }
-    [Console]::WriteLine((@{appName=$process.ProcessName;processId=$foregroundId;windowTitle=$caption.ToString();address=$address} | ConvertTo-Json -Compress))
+    [Console]::WriteLine((@{appName=$process.ProcessName;processId=$foregroundId;windowTitle=$caption.ToString();address=$address;executablePath=$executablePath} | ConvertTo-Json -Compress))
   } catch { [Console]::WriteLine('null') }
 }
 `;

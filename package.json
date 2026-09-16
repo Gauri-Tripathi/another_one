@@ -1,6 +1,6 @@
 {
   "name": "purrductive",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "private": true,
   "author": "Purrductive",
   "description": "A local-first screen-time tracker with a very persuasive cat.",
@@ -17,14 +17,27 @@
   "build": {
     "appId": "com.purrductive.app",
     "productName": "Purrductive",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "electron/**/*", "package.json"],
-    "win": { "target": "nsis", "icon": "public/cat-coach.png" },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/cat-coach.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "dependencies": {
     "@supabase/supabase-js": "latest",
     "lucide-react": "latest",
+    "qrcode": "^1.5.4",
     "react": "latest",
     "react-dom": "latest"
   },

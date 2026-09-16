@@ -22,6 +22,9 @@ let persistTimer;
 let lastSampleAt = Date.now();
 let activeApp = "Starting tracker…";
 let quitting = false;
+let snoozedUntil = 0;
+const appIcons = {};
+const iconAttempts = new Set();
 const deviceId = `${os.hostname()}-${process.platform}`.toLowerCase().replace(/[^a-z0-9-]/g, "-");
 
 if (!app.requestSingleInstanceLock()) app.exit(0);
@@ -97,14 +100,19 @@ async function sampleActivity() {
   try { sample = await queryActiveWindow(); } finally { sampling = false; }
   if (requestGeneration !== generation || quitting || suspended || locked || store.data.paused) return;
   trackingError = sample ? null : "Cannot read the active window. Retrying automatically.";
-  if (!sample?.appName || sample.appName.toLowerCase() === "purrductive") { store.endSession(); return; }
+  if (!sample?.appName || sample.processId === process.pid || sample.appName.toLowerCase() === "purrductive") { store.endSession(); return; }
+  const iconKey=sample.appName.toLowerCase().replace(/\.exe$/, '').replace(/\.root$/, '');
+  if (sample.executablePath && !iconAttempts.has(iconKey) && iconAttempts.size<300) {
+    iconAttempts.add(iconKey);
+    app.getFileIcon(sample.executablePath,{size:'small'}).then(icon => {if (!icon.isEmpty()) appIcons[iconKey]=icon.toDataURL();}).catch(() => {});
+  }
   activeApp = sample.appName;
   const website = websiteFromSample(sample);
   if (BROWSERS.has(sample.appName.toLowerCase())) websiteStatus = website ? "Reading browser address bar" : "Address bar unavailable. Browser app time still counts.";
   const classification = classifyActivity(sample.appName, sample.windowTitle, store.data.learnedRules);
   if (classification.category === "neutral" && website) Object.assign(classification, classifyActivity(sample.appName, website, []));
   store.addSample(sample, elapsed, classification, deviceId);
-  if (store.data.sittingSeconds >= store.data.settings.breakIntervalSeconds) showBreakWindow();
+  if (store.data.sittingSeconds >= store.data.settings.breakIntervalSeconds && Date.now() >= snoozedUntil) showBreakWindow();
 }
 
 function refreshTrayMenu() {
@@ -160,7 +168,7 @@ app.on("second-instance", () => {
 });
 
 ipcMain.handle("tracker:snapshot", () => ({
-  segments: store.recent(), settings: store.data.settings,
+  segments: store.recent(), settings: store.data.settings, icons: appIcons,
   live: { activeApp, trackingError, websiteStatus, paused: Boolean(store.data.paused), sittingSeconds: store.data.sittingSeconds, nextBreakIn: Math.max(0, store.data.settings.breakIntervalSeconds - store.data.sittingSeconds), lastSavedAt: store.data.updatedAt }
 }));
 
@@ -185,7 +193,7 @@ ipcMain.handle("settings:save", (_event, settings) => {
     idleThresholdSeconds: Math.max(30, Math.min(300, Number(settings.idleThresholdSeconds) || 60)),
     breakIntervalSeconds: Math.max(1800, Math.min(10800, Number(settings.breakIntervalSeconds) || 7200)),
     launchAtLogin: Boolean(settings.launchAtLogin),
-    sync: { url: String(settings.sync?.url || ""), key: String(settings.sync?.key || "") }
+    sync: { url: String(settings.sync?.url || ""), key: String(settings.sync?.key || ""), companionUrl: String(settings.sync?.companionUrl || "") }
   };
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: store.data.settings.launchAtLogin, path: app.getPath("exe") });
   store.persist();
@@ -193,8 +201,15 @@ ipcMain.handle("settings:save", (_event, settings) => {
 });
 
 ipcMain.handle("break:acknowledge", () => {
+  snoozedUntil = 0;
   store.data.sittingSeconds = 0;
   store.persist();
+  if (breakWindow && !breakWindow.isDestroyed()) breakWindow.close();
+  return true;
+});
+
+ipcMain.handle('break:snooze', () => {
+  snoozedUntil = Date.now() + 5 * 60000;
   if (breakWindow && !breakWindow.isDestroyed()) breakWindow.close();
   return true;
 });

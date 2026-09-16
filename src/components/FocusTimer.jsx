@@ -6,7 +6,7 @@ export default function FocusTimer() {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!end || end <= Date.now()) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
+    const timer = setInterval(() => {const stamp=Date.now();setNow(stamp);if (stamp>=end) clearInterval(timer);}, 1000);
     return () => clearInterval(timer);
   }, [end]);
   const remaining = Math.max(0, Math.ceil((end - now) / 1000));

@@ -64,6 +64,7 @@ class ActivityStore {
       this.appSessionId = crypto.randomUUID();
       this.activeApp = appKey;
       this.activeSite = null;
+      this.siteSessionId = null;
     }
     if (this.activeSite !== website) {
       this.siteSessionId = website ? crypto.randomUUID() : null;

@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 
-function startPurr() {
+export function startPurr(volume = .42) {
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   if (!AudioCtx) return () => {};
   const ctx = new AudioCtx();
   const master = ctx.createGain();
-  master.gain.value = .42;
+  master.gain.value = volume;
   master.connect(ctx.destination);
 
   const buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
@@ -40,6 +40,8 @@ function startPurr() {
 
 export default function BreakScreen({ preview = false, onClose }) {
   const [closing, setClosing] = useState(false);
+  const [muted,setMuted] = useState(false);
+  const [error,setError] = useState('');
   const stopRef = useRef(() => {});
   useEffect(() => {
     stopRef.current = startPurr();
@@ -50,8 +52,10 @@ export default function BreakScreen({ preview = false, onClose }) {
     setClosing(true);
     stopRef.current();
     setTimeout(async () => {
-      if (window.purrductive && !preview) await window.purrductive.acknowledgeBreak();
-      onClose?.();
+      try {
+        if (window.purrductive && !preview) await window.purrductive.acknowledgeBreak();
+        onClose?.();
+      } catch(e) {setClosing(false);setError(e.message);}
     }, 320);
   };
 
@@ -64,5 +68,7 @@ export default function BreakScreen({ preview = false, onClose }) {
       <p>Your brain has been carrying this shift. Give your body five minutes.</p>
       <button onClick={acknowledge}>Fine, I’m moving <span>→</span></button>
     </section>
+    <div className="break-actions"><button onClick={() => {stopRef.current();if (muted) stopRef.current=startPurr();setMuted(!muted);}}>{muted ? 'Sound on' : 'Mute purring'}</button><button disabled={closing} onClick={async () => {try {stopRef.current();if (preview) onClose?.();else await window.purrductive?.snoozeBreak();} catch(e) {setError(e.message);}}}>{preview ? 'Close preview' : 'Snooze 5 minutes'}</button></div>
+    {error && <p role="alert">{error}</p>}
   </main>;
 }

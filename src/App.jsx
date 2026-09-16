@@ -1,169 +1,90 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, BarChart3, CalendarDays, Cloud, Pause, PawPrint, Play, Settings as SettingsIcon, Sparkles, TimerReset } from "lucide-react";
-import BreakScreen from "./components/BreakScreen";
-import Setup from "./components/Setup";
-import Settings from "./components/Settings";
-import FocusTimer from "./components/FocusTimer";
-import UsageReport from "./components/UsageReport";
-import { groupApps, groupDays, localDay, secondsToClock, summarize } from "./lib/time";
-import { makeSupabase, pullRecent, pushSegments } from "./lib/sync";
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { BarChart3, Cloud, Pause, PawPrint, Play, Settings as SettingsIcon } from 'lucide-react';
+import BreakScreen from './components/BreakScreen';
+import Setup from './components/Setup';
+import Settings from './components/Settings';
+import FocusTimer from './components/FocusTimer';
+import UsageReport from './components/UsageReport';
+import CatCompanion from './components/CatCompanion';
+import DayOverview from './components/DayOverview';
+import AppearanceStudio from './components/AppearanceStudio';
+import { localDay, summarize } from './lib/time';
+import { makeSupabase, pullRecent, pushSegments, requireUser } from './lib/sync';
+import { parsePairing } from './lib/pairing.mjs';
+import { segmentsForDay } from './lib/timeline.mjs';
 
-const DEFAULT_SETTINGS = { idleThresholdSeconds: 60, breakIntervalSeconds: 7200, launchAtLogin: true, sync: { url: "", key: "" } };
-
-function Donut({ stats }) {
-  const split = stats.total ? (stats.productive / stats.total) * 100 : 0;
-  const distraction = stats.total ? (stats.distraction / stats.total) * 100 : 0;
-  return <div className="donut" style={{ "--productive": `${split * 3.6}deg`, "--distraction": `${(split + distraction) * 3.6}deg` }}>
-    <div><strong>{stats.focus}%</strong><span>focus score</span></div>
-  </div>;
-}
-
-function savedLabel(value) {
-  if (!value) return "Waiting for first save";
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
-  return seconds < 10 ? "Saved just now" : `Saved ${seconds}s ago`;
-}
-
-function Dashboard({ user, segments, live, onCategory, onOpenSettings, onOpenHistory, onPreviewBreak, onToggleTracking }) {
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("all");
-  const [date, setDate] = useState(localDay());
-  const [limit, setLimit] = useState(20);
-  const filtered = useMemo(() => segments.filter(item =>
-    (!date || localDay(item.startedAt) === date) &&
-    (category === "all" || item.category === category) &&
-    `${item.appName} ${item.windowTitle}`.toLowerCase().includes(query.toLowerCase())
-  ), [segments, date, category, query]);
-  const todaySegments = useMemo(() => segments.filter(item => localDay(item.startedAt) === localDay()), [segments]);
-  const stats = useMemo(() => summarize(todaySegments), [todaySegments]);
-  const apps = useMemo(() => groupApps(todaySegments).slice(0, 6), [todaySegments]);
-  const yesterdayStats = useMemo(() => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    return summarize(segments.filter(item => localDay(item.startedAt) === localDay(yesterday)));
-  }, [segments]);
-  const max = apps[0]?.seconds || 1;
-  return <div className="app-shell">
-    <aside>
-      <div className="brand-mark"><PawPrint/><span>purrductive</span></div>
-      <nav><button className="active"><BarChart3/>Today</button><button onClick={onOpenHistory}><CalendarDays/>History</button><button onClick={onOpenSettings}><SettingsIcon/>Settings</button></nav>
-      <div className="coach-card"><img src="./cat-coach.png" alt="Cat coach"/><p>Next stretch</p><strong>{live?.nextBreakIn != null ? secondsToClock(live.nextBreakIn) : "2h 00m"}</strong><button onClick={onPreviewBreak}>Test the cat</button></div>
-      <div className={`local-badge ${live?.paused ? "paused" : ""}`}><span/><div><b>{live ? live.paused ? "Tracking paused" : "Tracking locally" : "Mobile view"}</b><small>{live?.activeApp || "Synced dashboard"}</small></div></div>
-    </aside>
-    <main className="dashboard">
-      <header className="topbar"><div><p className="eyebrow">{new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(new Date()).toUpperCase()} · TODAY</p><h1>Hey{user ? `, ${user}` : ""}. Here’s the truth.</h1></div>{live && <button className={`tracking-button ${live.paused ? "paused" : ""}`} onClick={onToggleTracking}>{live.paused ? <Play size={16}/> : <Pause size={16}/>} {live.paused ? "Resume tracking" : "Pause tracking"}</button>}</header>
-      <section className="summary-grid">
-        <article className="hero-stat"><p>TOTAL SCREEN TIME</p><strong>{secondsToClock(stats.total)}</strong><span className="delta"><Sparkles size={14}/> {yesterdayStats.total ? `${stats.total >= yesterdayStats.total ? "+" : "−"}${secondsToClock(Math.abs(stats.total - yesterdayStats.total))} vs yesterday` : "Active time only—idle minutes removed"}</span></article>
-        <article className="split-card"><div><span className="dot green"/><p>Productive</p><strong>{secondsToClock(stats.productive)}</strong></div><div><span className="dot coral"/><p>Distracted</p><strong>{secondsToClock(stats.distraction)}</strong></div><div><span className="dot grey"/><p>Unsorted</p><strong>{secondsToClock(stats.neutral)}</strong></div></article>
-        <article className="focus-card"><Donut stats={stats}/><p>Based only on time Purrductive could confidently sort.</p></article>
-      </section>
-      {live?.trackingError && <p className="error-banner" role="status">{live.trackingError}</p>}
-      <FocusTimer/>
-      <div className="cat-note"><img src="./cat-coach.png" alt="Your orange cat coach"/><div><span>YOUR TINY ACCOUNTABILITY DEPARTMENT</span><strong>A little focus. A little chaos. All accounted for.</strong><p>I'm keeping the receipts. You're still in charge.</p></div><PawPrint size={30}/></div>
-      <UsageReport segments={segments} live={live}/>
-      <section className="content-grid">
-        <article className="panel timeline-panel"><div className="panel-heading"><div><p className="eyebrow">WHERE THE DAY WENT</p><h2>Activity</h2></div><span>Click a label to teach the classifier</span></div>
-          <div className="activity-filters">
-            <input aria-label="Search activity" placeholder="Search apps or window titles..." value={query} onChange={e => { setQuery(e.target.value); setLimit(20); }}/>
-            <input aria-label="Activity date (clear for all dates)" type="date" value={date} onChange={e => { setDate(e.target.value); setLimit(20); }}/>
-            <select aria-label="Filter category" value={category} onChange={e => { setCategory(e.target.value); setLimit(20); }}><option value="all">All categories</option><option value="productive">Productive</option><option value="distraction">Distractions</option><option value="neutral">Needs review</option></select>
-            <button onClick={() => { setDate(""); setLimit(20); }}>All dates</button>
-          </div>
-          <div className="activity-list">{filtered.length ? filtered.slice(0, limit).map(item => <div className="activity-row" key={item.id}>
-            <div className="app-icon">{(item.appName || "?").slice(0, 1)}</div><div className="activity-name"><strong>{item.appName}</strong><span>{item.windowTitle}</span></div>
-            <div className="confidence">{Math.round((item.confidence || 0) * 100)}%<small>{item.reason}</small></div>
-            <select aria-label={`Category for ${item.appName}`} value={item.category} onChange={e => onCategory(item.id, e.target.value)} className={item.category}><option value="productive">Productive</option><option value="distraction">Distraction</option><option value="neutral">Unsorted</option></select>
-            <b className="duration">{secondsToClock(item.seconds)}</b>
-          </div>) : <div className="empty-activity"><PawPrint/><strong>No matching activity</strong><span>Try another date, search, or category. New activity appears while tracking is running.</span></div>}</div>
-          <div className="activity-pagination"><span>{Math.min(limit, filtered.length)} of {filtered.length} entries</span>{limit < filtered.length && <button onClick={() => setLimit(n => n + 20)}>Show 20 more</button>}</div>
-        </article>
-        <article className="panel apps-panel"><div className="panel-heading"><div><p className="eyebrow">TOP APPS</p><h2>Attention map</h2></div></div>
-          <div className="bars">{apps.map(app => <div className="bar-item" key={`${app.appName}-${app.category}`}><div><span>{app.appName}</span><b>{secondsToClock(app.seconds)}</b></div><div className="bar-track"><i className={app.category} style={{ width: `${Math.max(7, app.seconds / max * 100)}%` }}/></div></div>)}</div>
-          <div className="insight"><TimerReset size={19}/><p><b>Small truth:</b> neutral time is deliberately excluded from your focus score. Sort it once and the cat learns.</p></div>
-        </article>
-      </section>
-      <footer><span><Cloud size={15}/> {live ? savedLabel(live.lastSavedAt) : "Read-only mobile companion"}</span><span>Raw titles are never shared unless you enable sync.</span></footer>
-    </main>
-  </div>;
-}
-
-function History({ segments, onBack }) {
-  const days = useMemo(() => groupDays(segments), [segments]);
-  const [selectedDate, setSelectedDate] = useState(days[0]?.date || "");
-  const selectedDay = days.find(day => day.date === selectedDate) || days[0];
-  const selectedApps = selectedDay ? groupApps(selectedDay.segments).slice(0, 8) : [];
-  const maximum = Math.max(1, ...days.map(day => day.total));
-  return <div className="settings-page history-page">
-    <button className="back-button" onClick={onBack}><ArrowLeft size={17}/> Today</button>
-    <header><p className="eyebrow">LAST 32 DAYS</p><h1>Your honest archive.</h1></header>
-    <div className="history-layout"><section className="panel history-list">
-      {days.length ? days.map(day => <button className={`history-row ${day.date === selectedDay?.date ? "selected" : ""}`} onClick={() => setSelectedDate(day.date)} key={day.date}>
-          <time>{new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" }).format(new Date(`${day.date}T12:00:00`))}</time>
-          <div className="history-bars"><i className="productive" style={{ width: `${day.productive / maximum * 100}%` }}/><i className="distraction" style={{ width: `${day.distraction / maximum * 100}%` }}/><i className="neutral" style={{ width: `${day.neutral / maximum * 100}%` }}/></div>
-          <b>{secondsToClock(day.total)}</b><span>{day.focus}% focused</span>
-        </button>) : <div className="history-empty">Your first full day will appear here tomorrow.</div>}
-      </section>
-      {selectedDay && <aside className="panel day-detail"><p className="eyebrow">DAY DETAIL</p><h2>{new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric" }).format(new Date(`${selectedDay.date}T12:00:00`))}</h2><strong>{secondsToClock(selectedDay.total)}</strong><span>{secondsToClock(selectedDay.productive)} productive · {secondsToClock(selectedDay.distraction)} distracted</span><div>{selectedApps.map(app => <p key={`${app.appName}-${app.category}`}><i className={app.category}/><b>{app.appName}</b><small>{secondsToClock(app.seconds)}</small></p>)}</div></aside>}
-    </div>
-  </div>;
-}
-
+const DEFAULT_SETTINGS = { idleThresholdSeconds:60,breakIntervalSeconds:7200,launchAtLogin:true,sync:{url:'',key:'',companionUrl:''} };
+function readSaved(key,fallback) {try {return JSON.parse(localStorage.getItem(key)) || fallback;} catch {return fallback;}}
+const desktop = Boolean(window.purrductive);
 export default function App() {
-  const breakMode = location.hash === "#/break";
-  const [previewBreak, setPreviewBreak] = useState(false);
-  const [page, setPage] = useState("dashboard");
-  const [name, setName] = useState(localStorage.getItem("purrductive-name") || "");
-  const [onboarded, setOnboarded] = useState(localStorage.getItem("purrductive-onboarded") === "true");
-  const [segments, setSegments] = useState([]);
-  const [live, setLive] = useState(null);
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-  const [error, setError] = useState("");
-  const syncState = useRef({ segments: [], settings: DEFAULT_SETTINGS });
-  syncState.current = { segments, settings };
-
-  const refresh = async () => {
-    try {
-    if (window.purrductive) {
-      const snapshot = await window.purrductive.getSnapshot();
-      setSegments(snapshot.segments || []); setLive(snapshot.live); setSettings(snapshot.settings || DEFAULT_SETTINGS);
-    } else {
-      const stored = JSON.parse(localStorage.getItem("purrductive-sync") || "null");
-      if (stored) setSettings(value => ({ ...value, sync: stored }));
-      const client = makeSupabase(stored);
-      if (client) { const rows = await pullRecent(client); setSegments(rows); }
-    }
-    setError("");
-    } catch (failure) { setError(failure.message || "Could not refresh activity. Retrying shortly."); }
-  };
-  useEffect(() => { refresh(); const timer = setInterval(refresh, 5000); return () => clearInterval(timer); }, []);
+  const [preview,setPreview] = useState(false), [page,setPage] = useState('dashboard');
+  const [name,setName] = useState(localStorage.getItem('purrductive-name') || '');
+  const [onboarded,setOnboarded] = useState(localStorage.getItem('purrductive-onboarded') === 'true');
+  const [local,setLocal] = useState([]), [remote,setRemote] = useState(desktop ? [] : readSaved('purrductive-cloud-cache',[]));
+  const [live,setLive] = useState(null), [settings,setSettings] = useState({...DEFAULT_SETTINGS,sync:readSaved('purrductive-sync',DEFAULT_SETTINGS.sync)});
+  const [icons,setIcons] = useState({});
+  const [error,setError] = useState(''), [syncStatus,setSyncStatus] = useState('Cloud not connected');
+  const [lastSync,setLastSync] = useState(localStorage.getItem('purrductive-last-sync'));
+  const [date,setDate] = useState(localDay()), [device,setDevice] = useState('all');
+  const [pairing,setPairing] = useState(() => !desktop ? parsePairing(location.hash,location.origin+location.pathname) : null);
+  const syncEpoch=useRef(0);
+  const state = useRef(); state.current = {local,settings};
+  const busy = useRef(false);
+  const isBreak = location.hash === '#/break';
   useEffect(() => {
-    if (!window.purrductive) return;
-    const timer = setInterval(async () => {
-      const state = syncState.current;
-      if (!state.settings.sync.url) return;
-      try { await pushSegments(makeSupabase(state.settings.sync), state.segments); } catch {}
-    }, 30000);
-    return () => clearInterval(timer);
-  }, []);
-
-  if (breakMode) return <BreakScreen/>;
-  if (previewBreak) return <BreakScreen preview onClose={() => setPreviewBreak(false)}/>;
-  if (!onboarded && window.purrductive) return <Setup onComplete={value => { setName(value); localStorage.setItem("purrductive-name", value); localStorage.setItem("purrductive-onboarded", "true"); setOnboarded(true); }}/>
-  if (page === "settings") return <Settings current={settings} onBack={() => setPage("dashboard")} onSave={async value => { setSettings(value); localStorage.setItem("purrductive-sync", JSON.stringify(value.sync)); if (window.purrductive) await window.purrductive.saveSettings(value); setPage("dashboard"); }}/>
-  if (page === "history") return <History segments={segments} onBack={() => setPage("dashboard")}/>;
-
-  const recategorize = async (id, category) => {
-    if (!window.purrductive) { setError("Change activity categories on your desktop."); return; }
+    if (!desktop || isBreak) return;
+    let disposed = false, fetching = false;
+    async function refresh() {if (fetching) return;fetching=true;try {
+      const snapshot = await window.purrductive.getSnapshot();
+      if (!disposed) {setLocal(snapshot.segments || []);setLive(snapshot.live);setIcons(snapshot.icons || {});setSettings(snapshot.settings || DEFAULT_SETTINGS);setError('');}
+    } catch(e) {if (!disposed) setError(e.message);} finally {fetching=false;}}
+    refresh();const timer=setInterval(refresh,5000);return () => {disposed=true;clearInterval(timer);};
+  },[isBreak]);
+  async function syncNow() {
+    if (busy.current || isBreak) return;
+    const config = state.current.settings.sync;
+    const epoch=syncEpoch.current;
+    const client = makeSupabase(config);
+    if (!client) {setSyncStatus(config?.url ? 'Check cloud configuration in Settings' : 'Cloud not connected');return;}
+    busy.current=true;setSyncStatus('Syncing…');
     try {
-      const saved = await window.purrductive.recategorize(id, category);
-      if (!saved) throw new Error("This activity could not be updated.");
-      setSegments(items => items.map(item => item.id === id ? { ...item, category, confidence: 1, reason: "You taught me this", manual: true } : item));
-    } catch (failure) { setError(failure.message); }
-  };
-  const toggleTracking = async () => {
-    if (!window.purrductive) return;
-    const paused = await window.purrductive.toggleTracking();
-    setLive(value => ({ ...value, paused, activeApp: paused ? "Paused" : "Resuming…" }));
-  };
-  return <>{error && <p className="error-banner" role="alert">{error}</p>}<Dashboard user={name} segments={segments} live={live} onCategory={recategorize} onOpenSettings={() => setPage("settings")} onOpenHistory={() => setPage("history")} onPreviewBreak={() => setPreviewBreak(true)} onToggleTracking={toggleTracking}/></>;
+      const user = await requireUser(client);
+      if (epoch!==syncEpoch.current) return;
+      const cacheOwner = config.url+'|'+user.id;
+      if (localStorage.getItem('purrductive-cache-owner') !== cacheOwner) {setRemote([]);localStorage.removeItem('purrductive-cloud-cache');localStorage.removeItem('purrductive-last-sync');setLastSync(null);}
+      if (desktop) await pushSegments(client,state.current.local,user);
+      const rows=await pullRecent(client,user);
+      const session=await client.auth.getSession();
+      if (epoch!==syncEpoch.current || session.data.session?.user?.id!==user.id || state.current.settings.sync.url !== config.url || state.current.settings.sync.key !== config.key) return;
+      setRemote(rows);setSyncStatus('Cloud up to date');
+      const stamp=new Date().toISOString();setLastSync(stamp);
+      try {localStorage.setItem('purrductive-cloud-cache',JSON.stringify(rows));localStorage.setItem('purrductive-cache-owner',cacheOwner);localStorage.setItem('purrductive-last-sync',stamp);} catch {setSyncStatus('Synced · offline cache is full');}
+    } catch(e) {if (epoch===syncEpoch.current) setSyncStatus('Sync needs attention: '+e.message);} finally {busy.current=false;}
+  }
+  useEffect(() => {if (isBreak) return;syncNow();const timer=setInterval(syncNow,30000);window.addEventListener('online',syncNow);return () => {clearInterval(timer);window.removeEventListener('online',syncNow);};},[settings.sync.url,settings.sync.key,isBreak]);
+  const segments=useMemo(() => {const merged=new Map(remote.map(s => [s.id,s]));local.forEach(s => merged.set(s.id,s));return [...merged.values()];},[local,remote]);
+  const devices=useMemo(() => [...new Set(segments.map(s => s.deviceId || 'desktop'))].sort(),[segments]);
+  const visible=useMemo(() => segmentsForDay(segments.filter(s => device === 'all' || (s.deviceId || 'desktop') === device),date),[segments,date,device]);
+  const stats=useMemo(() => summarize(visible),[visible]);
+  async function recategorize(id,category) {
+    if (!local.some(s => s.id === id)) {setError('Edit this activity on the laptop that recorded it.');return;}
+    try {if (!await window.purrductive.recategorize(id,category)) throw new Error('Activity could not be updated.');setLocal(items => items.map(s => s.id === id ? {...s,category,confidence:1,manual:true,reason:'You taught me this'} : s));} catch(e) {setError(e.message);}
+  }
+  if (isBreak) return <BreakScreen/>;
+  if (preview) return <BreakScreen preview onClose={() => setPreview(false)}/>;
+  if (pairing) return <main className="settings-page"><div className="connection-import"><PawPrint/><h1>Connect your companion?</h1><p>Cloud project: <strong>{pairing.url}</strong></p><p>Only continue if this matches the project in your laptop’s Settings. You will sign in separately; no password was shared in the QR code.</p><div className="button-row"><button className="primary-button" onClick={() => {syncEpoch.current++;setSettings(v => ({...v,sync:pairing}));localStorage.setItem('purrductive-sync',JSON.stringify(pairing));setPairing(null);history.replaceState(null,'',location.pathname+location.search);setPage('settings');}}>Use this connection</button><button className="soft-button" onClick={() => {setPairing(null);history.replaceState(null,'',location.pathname+location.search);}}>Cancel</button></div></div></main>;
+  if (!onboarded && desktop) return <Setup onComplete={value => {setName(value);localStorage.setItem('purrductive-name',value);localStorage.setItem('purrductive-onboarded','true');setOnboarded(true);}}/>;
+  if (page === 'settings') return <Settings current={settings} syncStatus={syncStatus} lastSync={lastSync} onSync={syncNow} onSignOut={() => {syncEpoch.current++;setRemote([]);setLastSync(null);setSyncStatus('Signed out');localStorage.removeItem('purrductive-cloud-cache');localStorage.removeItem('purrductive-last-sync');localStorage.removeItem('purrductive-cache-owner');}} onBack={() => setPage('dashboard')} onSave={async value => {if (desktop) await window.purrductive.saveSettings(value);syncEpoch.current++;setSettings(value);localStorage.setItem('purrductive-sync',JSON.stringify(value.sync));setPage('dashboard');}}/>;
+  return <div className="app-shell">
+    <aside><div className="brand-mark"><PawPrint/><span>purrductive</span></div><nav><button className="active" onClick={() => setDate(localDay())}><BarChart3/>Your day</button><button onClick={() => setPage('settings')}><SettingsIcon/>Settings & sync</button></nav><div className="sidebar-note"><PawPrint/><h3>Small steps.<br/>Big stretches.</h3><p>Your time is information, not a report card.</p></div><div className={'local-badge '+(live?.paused ? 'paused' : '')}><span/><div><b>{live ? live.paused ? 'Tracking paused' : 'Tracking locally' : 'Mobile companion'}</b><small>{live?.activeApp || 'Last uploaded activity'}</small></div></div></aside>
+    <main className="dashboard"><header className="topbar"><div><p className="eyebrow">A LITTLE MORE INTENTIONAL</p><h1>Make room for your day{name ? `, ${name}` : ''}.</h1></div>{live && <button className="tracking-button" onClick={async () => {try {const paused=await window.purrductive.toggleTracking();setLive(v => ({...v,paused}));} catch(e) {setError(e.message);}}}>{live.paused ? <Play size={16}/> : <Pause size={16}/>} {live.paused ? 'Resume' : 'Pause'}</button>}</header>
+      <div className="day-toolbar"><label>Your day <input type="date" aria-label="Select day" value={date} max={localDay()} onChange={e => setDate(e.target.value || localDay())}/></label><button className="soft-button" onClick={() => setDate(localDay())}>Today</button><select aria-label="Device" value={device} onChange={e => setDevice(e.target.value)}><option value="all">All laptops</option>{devices.map(d => <option key={d} value={d}>{d}</option>)}</select><span>Saved activity · last 32 days</span></div>
+      {(error || live?.trackingError) && <p className="error-banner" role="alert">{error || live.trackingError}</p>}
+      <AppearanceStudio onPreview={() => setPreview(true)}/>
+      <DayOverview stats={stats} day={date} allDevices={device==='all' && devices.length>1}/>
+      <CatCompanion live={live} onPreview={() => setPreview(true)}/><FocusTimer/>
+      <UsageReport key={date+'|'+device} segments={visible} live={live} day={date} onCategory={recategorize} readOnly={!desktop} icons={icons}/>
+      <section className="cloud-strip"><Cloud size={20}/><div><strong>{syncStatus}</strong><small>{lastSync ? 'Last successful sync: '+new Date(lastSync).toLocaleString() : 'Connect in Settings to see your laptop history from your phone.'}</small>{!desktop && <small>Your laptop can be off. New activity appears after it reconnects. This view does not track phone screen time.</small>}</div><button className="soft-button" onClick={settings.sync.url ? syncNow : () => setPage('settings')}>{settings.sync.url ? 'Sync now' : 'Connect phone'}</button></section>
+      <footer><span>{live?.lastSavedAt ? 'Saved locally: '+new Date(live.lastSavedAt).toLocaleTimeString() : 'Read-only companion'}</span><span>Website totals are included in browser totals—not added twice.</span></footer>
+    </main></div>;
 }
