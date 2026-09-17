@@ -26,8 +26,20 @@ export function timelineHours(segments, day) {
       const overlap = Math.max(0, Math.min(b, hour.end) - Math.max(a, hour.start));
       if (!overlap) continue;
       hour[category] += active * overlap / (b - a);
-      hour.segments.push(segment);
+      hour.segments.push({...segment,startedAt:new Date(Math.max(a,hour.start)).toISOString(),endedAt:new Date(Math.min(b,hour.end)).toISOString(),seconds:active*overlap/(b-a)});
     }
   }
   return hours;
+}
+
+// Presentation-only grouping: keep every original record and its correction target.
+export function timelineSessions(segments) {
+  const groups=[];
+  for(const item of [...segments].sort((a,b)=>a.startedAt.localeCompare(b.startedAt))) {
+    const last=groups.at(-1),gap=last?Date.parse(item.startedAt)-Date.parse(last.endedAt):Infinity;
+    const same=last && last.deviceId===item.deviceId && last.appName===item.appName && last.website===item.website && last.category===item.category && last.appSessionId===item.appSessionId && gap>=-1000 && gap<=3000;
+    if(same){last.seconds+=item.seconds;last.endedAt=item.endedAt>last.endedAt?item.endedAt:last.endedAt;last.entries.push(item);}
+    else groups.push({...item,entries:[item]});
+  }
+  return groups;
 }

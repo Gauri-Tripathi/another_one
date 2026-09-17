@@ -47,7 +47,7 @@ export async function pushSegments(client, segments, user) {
   for (let i=0;i<changed.length;i+=250) {
     const batch=changed.slice(i,i+250);
     const { error } = await client.from("activity_segments").upsert(batch);
-    if (error) throw error;
+    if (error) {if(error.code==='22P02' && /integer/i.test(error.message))throw new Error('Cloud database needs the v0.8 precise-time migration (supabase/migration-008-precise-time.sql). Local tracking is safe.');throw error;}
     batch.forEach(row => cache.rows.set(row.id,JSON.stringify(row)));
   }
   const ids=new Set(rows.map(r => r.id));

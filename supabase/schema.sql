@@ -4,7 +4,7 @@ create table if not exists public.activity_segments (
   device_id text not null,
   started_at timestamptz not null,
   ended_at timestamptz not null,
-  seconds integer not null check (seconds >= 0),
+  seconds double precision not null check (seconds >= 0),
   app_name text not null,
   window_title text not null default '',
   category text not null check (category in ('productive', 'distraction', 'neutral')),

@@ -10,12 +10,15 @@ export function localDay(value = new Date()) {
 }
 
 export function secondsToClock(value = 0) {
-  if (value > 0 && value < 60) return `${Math.round(value)}s`;
-  const minutes = Math.max(0, Math.round(value / 60));
+  if(Number(value)>0 && Number(value)<1) return '<1s';
+  const total = Math.max(0, Math.floor(Number(value) || 0));
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
-  if (!hours) return `${mins}m`;
-  return `${hours}h ${String(mins).padStart(2, "0")}m`;
+  const seconds=String(total%60).padStart(2,'0');
+  if (!hours) return `${mins}m ${seconds}s`;
+  return `${hours}h ${String(mins).padStart(2, "0")}m ${seconds}s`;
 }
 
 export function summarize(segments = []) {
