@@ -8,4 +8,6 @@ function run(command,args){const result=spawnSync(command,args,{stdio:'inherit'}
 for(const arch of ['arm64','x86_64'])run('/usr/bin/xcrun',['swiftc','-O','-target',arch+'-apple-macos13.0','-framework','AppKit','-framework','ApplicationServices',path.join(root,'electron','mac','Foreground.swift'),'-o',path.join(out,'foreground-'+arch)]);
 run('/usr/bin/lipo',['-create',path.join(out,'foreground-arm64'),path.join(out,'foreground-x86_64'),'-output',path.join(out,'purrductive-foreground')]);
 fs.chmodSync(path.join(out,'purrductive-foreground'),0o755);
-run('/usr/bin/lipo',['-verify_arch','arm64','x86_64',path.join(out,'purrductive-foreground')]);
+// -verify_arch consumes every remaining argument as an architecture name.
+// The input filename must precede it, otherwise lipo parses the path as an arch.
+run('/usr/bin/lipo',[path.join(out,'purrductive-foreground'),'-verify_arch','arm64','x86_64']);
