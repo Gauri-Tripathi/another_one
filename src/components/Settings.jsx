@@ -3,6 +3,9 @@ import QRCode from 'qrcode';
 import { ArrowLeft, Cloud, Database, Download, FolderOpen, LogIn, ShieldCheck } from "lucide-react";
 import { makeSupabase } from "../lib/sync";
 import { parsePairing } from '../lib/pairing.mjs';
+import ClassificationRules from './ClassificationRules';
+import RecognitionSettings from './RecognitionSettings';
+import MacPermissions from './MacPermissions';
 
 export default function Settings({ current, onSave, onBack, syncStatus, lastSync, onSync, onSignOut }) {
   const [settings, setSettings] = useState(current);
@@ -59,14 +62,20 @@ export default function Settings({ current, onSave, onBack, syncStatus, lastSync
     <button className="back-button" onClick={onBack}><ArrowLeft size={17}/> Dashboard</button>
     <header><p className="eyebrow">MAKE IT YOURS</p><h1>Settings</h1></header>
     <div className="settings-grid">
+      {window.purrductive?.platform==='darwin'&&<section className="settings-card"><MacPermissions/></section>}
       <section className="settings-card">
         <div className="settings-title"><span><ShieldCheck/></span><div><h2>Tracking</h2><p>What counts as being at your screen.</p></div></div>
         <label>Idle after <b>{settings.idleThresholdSeconds} seconds</b></label>
         <input type="range" min="30" max="300" step="15" value={settings.idleThresholdSeconds} onChange={e => patch({ idleThresholdSeconds: Number(e.target.value) })}/>
+        <label className="passive-option"><input type="checkbox" checked={Boolean(settings.countPassiveTime)} onChange={e=>patch({countPassiveTime:e.target.checked})}/> Count passive reading/video time while unlocked</label><p className="planner-help">When enabled, no-input time counts too. The app cannot know whether you are watching or away; lock your laptop when leaving. Sleep and lock never count.</p>
         <label>Cat intervention after <b>{Math.round(settings.breakIntervalSeconds / 60)} minutes</b></label>
         <input type="range" min="30" max="180" step="15" value={settings.breakIntervalSeconds / 60} onChange={e => patch({ breakIntervalSeconds: Number(e.target.value) * 60 })}/>
-        <label className="toggle-line"><span>Launch when Windows starts</span><input type="checkbox" checked={settings.launchAtLogin} onChange={e => patch({ launchAtLogin: e.target.checked })}/><i/></label>
+        <p className="planner-help">Breaks use awake, unlocked laptop time, independent of app detection and keyboard activity. Lock, sleep, or pause stops the clock.</p>
+        {window.purrductive?.previewBreak&&<button className="soft-button" onClick={async()=>{try{await window.purrductive.previewBreak();}catch(e){setDataMessage(e.message);}}}>Test desktop cat now</button>}
+        <label className="toggle-line"><span>Launch when I sign in</span><input type="checkbox" checked={settings.launchAtLogin} onChange={e => patch({ launchAtLogin: e.target.checked })}/><i/></label>
+        <ClassificationRules rules={settings.classificationRules||[]} onChange={classificationRules=>patch({classificationRules})}/>
       </section>
+      <section className="settings-card"><RecognitionSettings value={settings.recognition} onChange={recognition=>patch({recognition})}/></section>
       <section className="settings-card">
         <div className="settings-title"><span><Cloud/></span><div><h2>Connected, even apart.</h2><p>Cloud history on your phone—even while your laptop is off.</p></div></div>
         <p className="data-copy">This needs your own Supabase project (with the supplied database schema) and an HTTPS-hosted copy of the companion. No always-on laptop or shared Wi-Fi required. Sync uploads app names, window titles, website domains, and timing to your account.</p>

@@ -49,8 +49,7 @@ class ActivityStore {
     }
   }
 
-  addSample(sample, seconds, classification, deviceId) {
-    const now = new Date();
+  addSample(sample, seconds, classification, deviceId, now = new Date()) {
     const today = localDay(now);
     if (this.prunedDay !== today) {
       const oldest = localDay(new Date(Date.now() - 32 * 86400000));
@@ -73,7 +72,7 @@ class ActivityStore {
     const same = last && last.appSessionId === this.appSessionId && last.website === website && last.siteSessionId === this.siteSessionId && now.getTime() - new Date(last.endedAt).getTime() <= 15000 && last.appName === sample.appName && last.windowTitle === sample.windowTitle && last.category === classification.category && !last.manual && localDay(new Date(last.startedAt)) === today;
     if (same) {
       last.endedAt = now.toISOString();
-      last.seconds += seconds;
+      last.seconds = Math.round((last.seconds + seconds)*1000000)/1000000;
       last.confidence = classification.confidence;
       last.reason = classification.reason;
     } else {
@@ -82,7 +81,6 @@ class ActivityStore {
         appName: sample.appName || "Unknown", windowTitle: sample.windowTitle || "Untitled", ...classification, manual: false
       });
     }
-    this.data.sittingSeconds += seconds;
     this.data.lastActivityAt = now.toISOString();
   }
 
