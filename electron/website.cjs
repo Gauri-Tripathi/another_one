@@ -1,4 +1,4 @@
-const BROWSERS = new Set(['chrome', 'msedge', 'brave', 'firefox', 'opera', 'vivaldi', 'arc']);
+const BROWSERS = new Set(['chrome', 'msedge', 'brave', 'firefox', 'opera', 'vivaldi', 'arc', 'safari']);
 function websiteFromSample(sample) {
   if (!BROWSERS.has(String(sample.appName).toLowerCase()) || !sample.address) return null;
   try {

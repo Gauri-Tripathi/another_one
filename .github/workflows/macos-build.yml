@@ -1,0 +1,47 @@
+name: Build macOS installers
+on:
+  workflow_dispatch:
+    inputs:
+      signed:
+        description: Sign and notarize for distribution (requires Apple secrets)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build:mac-helper
+      - run: npm test
+      - run: npm run build
+      - name: Package local-test builds (ad-hoc signed, not notarized)
+        if: ${{ !inputs.signed }}
+        run: npx electron-builder --mac dmg zip --arm64 --x64 --publish never -c.mac.identity=- -c.mac.hardenedRuntime=false -c.mac.notarize=false
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Package Developer ID signed and notarized builds
+        if: ${{ inputs.signed }}
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test -n "$CSC_LINK" && test -n "$CSC_KEY_PASSWORD" && test -n "$APPLE_ID" && test -n "$APPLE_APP_SPECIFIC_PASSWORD" && test -n "$APPLE_TEAM_ID"
+          npx electron-builder --mac dmg zip --arm64 --x64 --publish never -c.forceCodeSigning=true -c.mac.notarize=true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: purrductive-macos-${{ inputs.signed && 'signed' || 'local-test' }}
+          if-no-files-found: error
+          path: |
+            release/Purrductive-*-mac-*.dmg
+            release/Purrductive-*-mac-*.zip

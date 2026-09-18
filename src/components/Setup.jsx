@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { ArrowRight, LockKeyhole } from "lucide-react";
+import MacPermissions from './MacPermissions';
 
 export default function Setup({ onComplete }) {
   const [name, setName] = useState("");
@@ -9,7 +10,8 @@ export default function Setup({ onComplete }) {
       <div className="setup-number">01</div>
       <p className="eyebrow">PRIVATE BY DEFAULT</p>
       <h1>Let’s make your time<br/><em>visible.</em></h1>
-      <p className="setup-lede">Purrductive watches active apps—not keystrokes or page contents—and keeps your timeline on this computer unless you turn on sync.</p>
+      <p className="setup-lede">Purrductive watches active apps—not keystrokes or page contents—and keeps your timeline on this computer unless you enable sync or optional cloud recognition.</p>
+      <MacPermissions/>
       <label>Your name <span>optional</span></label>
       <input autoFocus placeholder="What should the cat call you?" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && onComplete(name)} />
       <button className="primary-button" onClick={() => onComplete(name)}>Start tracking <ArrowRight size={18}/></button>
