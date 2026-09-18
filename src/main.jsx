@@ -4,6 +4,7 @@ import App from "./App";
 import "./styles.css";
 import "./refresh.css";
 import "./appearance.css";
+import "./planner-cat.css";
 
 if ("serviceWorker" in navigator && !window.purrductive) {
   if (import.meta.env.PROD) window.addEventListener("load", () => navigator.serviceWorker.register('./sw.js').catch(() => {}));

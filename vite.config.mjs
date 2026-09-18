@@ -6,7 +6,7 @@ function offlineCompanion() {
   return { name:'offline-companion', generateBundle(_options,bundle) {
     const files=Object.keys(bundle);
     const version=createHash('sha256').update(files.join('|')).digest('hex').slice(0,12);
-    const urls=['./','./index.html','./cat-coach.png','./icon.svg','./manifest.webmanifest',...files.filter(f => /\.(js|css)$/.test(f)).map(f => './'+f)];
+    const urls=['./','./index.html','./cat-coach.png','./icon.svg','./manifest.webmanifest',...['silver','tuxedo','siamese','ginger'].map(id=>'./cats/'+id+'.png'),...files.filter(f => /\.(js|css)$/.test(f)).map(f => './'+f)];
     this.emitFile({type:'asset',fileName:'sw.js',source:`
 const CACHE='purrductive-${version}';
 const FILES=${JSON.stringify(urls)};

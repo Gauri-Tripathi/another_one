@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import RealCat from './RealCat';
 
 export function startPurr(volume = .42) {
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -38,14 +39,18 @@ export function startPurr(volume = .42) {
   return () => { if (ctx.state !== "closed") ctx.close().catch(() => {}); };
 }
 
-export default function BreakScreen({ preview = false, onClose }) {
+export default function BreakScreen({ preview = false, onClose,catId:initialCatId='silver' }) {
+  const [catId,setCatId]=useState(initialCatId);
+  useEffect(()=>{let active=true;if(!preview)window.purrductive?.getSnapshot().then(s=>{if(active)setCatId(s.settings.catId||'silver');}).catch(()=>{});return()=>{active=false;};},[preview]);
   const [closing, setClosing] = useState(false);
   const [muted,setMuted] = useState(false);
   const [error,setError] = useState('');
+  const [walking,setWalking] = useState(true);
   const stopRef = useRef(() => {});
   useEffect(() => {
     stopRef.current = startPurr();
-    return () => stopRef.current();
+    const arrival=setTimeout(()=>setWalking(false),7000);
+    return () => {clearTimeout(arrival);stopRef.current();};
   }, []);
 
   const acknowledge = async () => {
@@ -59,16 +64,16 @@ export default function BreakScreen({ preview = false, onClose }) {
     }, 320);
   };
 
-  return <main className={`break-screen ${closing ? "is-closing" : ""}`}>
-    <div className="break-noise" />
-    <p className="break-eyebrow">Time for a movement break.</p>
-    <img className="break-cat" src="./cat-coach.png" alt="A fluffy orange cat raising one paw" />
-    <section className="break-copy">
+  const interactive=enabled=>{if(!preview)window.purrductive?.setBreakInteractive(enabled);};
+  return <main className={`walking-break ${preview?'preview-break':'desktop-break'} ${closing ? "is-closing" : ""}`}>
+    <div className="cat-walk-path"><RealCat catId={catId} walking={walking}/></div>
+    <section className="walking-break-message" onPointerEnter={()=>interactive(true)} onPointerLeave={()=>interactive(false)}>
+      <p className="eyebrow">YOUR MOVEMENT COACH HAS ARRIVED</p>
       <h1>Move your ass, babe.</h1>
       <p>Your brain has been carrying this shift. Give your body five minutes.</p>
-      <button onClick={acknowledge}>Fine, I’m moving <span>→</span></button>
-    </section>
+      <button className="break-done" disabled={closing} onClick={acknowledge}>Fine, I’m moving <span>→</span></button>
     <div className="break-actions"><button onClick={() => {stopRef.current();if (muted) stopRef.current=startPurr();setMuted(!muted);}}>{muted ? 'Sound on' : 'Mute purring'}</button><button disabled={closing} onClick={async () => {try {stopRef.current();if (preview) onClose?.();else await window.purrductive?.snoozeBreak();} catch(e) {setError(e.message);}}}>{preview ? 'Close preview' : 'Snooze 5 minutes'}</button></div>
     {error && <p role="alert">{error}</p>}
+    </section>
   </main>;
 }
