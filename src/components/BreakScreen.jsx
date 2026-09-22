@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import RealCat from './RealCat';
+import CrawlingCat from './CrawlingCat';
+import {startMeow} from '../lib/meow.mjs';
 
 export function startPurr(volume = .42) {
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -36,6 +37,7 @@ export function startPurr(volume = .42) {
   lfoGain.gain.value = .28;
   lfo.connect(lfoGain).connect(pulse.gain);
   noise.start(); oscillator.start(); lfo.start();
+  if(ctx.state==='suspended')ctx.resume().catch(()=>{});
   return () => { if (ctx.state !== "closed") ctx.close().catch(() => {}); };
 }
 
@@ -45,17 +47,22 @@ export default function BreakScreen({ preview = false, onClose,catId:initialCatI
   const [closing, setClosing] = useState(false);
   const [muted,setMuted] = useState(false);
   const [error,setError] = useState('');
-  const [walking,setWalking] = useState(true);
+  const [soundStatus,setSoundStatus]=useState('ready');
+  const [animationStatus,setAnimationStatus]=useState('loading');
+  const [replay,setReplay]=useState(0);
+  const meowRef=useRef(()=>{});
   const stopRef = useRef(() => {});
+  function meow(){meowRef.current();meowRef.current=startMeow(.3,setSoundStatus);}
   useEffect(() => {
     stopRef.current = startPurr();
-    const arrival=setTimeout(()=>setWalking(false),7000);
-    return () => {clearTimeout(arrival);stopRef.current();};
+    meow();
+    return () => {stopRef.current();meowRef.current();};
   }, []);
 
   const acknowledge = async () => {
     setClosing(true);
     stopRef.current();
+    meowRef.current();
     setTimeout(async () => {
       try {
         if (window.purrductive && !preview) await window.purrductive.acknowledgeBreak();
@@ -66,13 +73,17 @@ export default function BreakScreen({ preview = false, onClose,catId:initialCatI
 
   const interactive=enabled=>{if(!preview)window.purrductive?.setBreakInteractive(enabled);};
   return <main className={`walking-break ${preview?'preview-break':'desktop-break'} ${closing ? "is-closing" : ""}`}>
-    <div className="cat-walk-path"><RealCat catId={catId} walking={walking}/></div>
+    <CrawlingCat key={replay} catId={catId} onStatus={setAnimationStatus}/>
     <section className="walking-break-message" onPointerEnter={()=>interactive(true)} onPointerLeave={()=>interactive(false)}>
       <p className="eyebrow">YOUR MOVEMENT COACH HAS ARRIVED</p>
       <h1>Move your ass, babe.</h1>
       <p>Your brain has been carrying this shift. Give your body five minutes.</p>
       <button className="break-done" disabled={closing} onClick={acknowledge}>Fine, I’m moving <span>→</span></button>
-    <div className="break-actions"><button onClick={() => {stopRef.current();if (muted) stopRef.current=startPurr();setMuted(!muted);}}>{muted ? 'Sound on' : 'Mute purring'}</button><button disabled={closing} onClick={async () => {try {stopRef.current();if (preview) onClose?.();else await window.purrductive?.snoozeBreak();} catch(e) {setError(e.message);}}}>{preview ? 'Close preview' : 'Snooze 5 minutes'}</button></div>
+    <div className="break-actions"><button onClick={() => {stopRef.current();meowRef.current();if (muted){stopRef.current=startPurr();meow();}setMuted(!muted);}}>{muted ? 'Sound on' : 'Mute cat'}</button><button disabled={closing} onClick={()=>{setMuted(false);meow();}}>Meow again</button><button disabled={closing} onClick={()=>setReplay(n=>n+1)}>Replay crawl</button><button disabled={closing} onClick={async () => {try {stopRef.current();meowRef.current();if (preview) onClose?.();else await window.purrductive?.snoozeBreak();} catch(e) {setError(e.message);}}}>{preview ? 'Close preview' : 'Snooze 5 minutes'}</button></div>
+    {soundStatus==='blocked'&&!muted&&<p role="status">Sound paused by your browser. Click Meow again to enable it.</p>}
+    {soundStatus==='unavailable'&&<p role="status">Audio is unavailable on this device.</p>}
+    {animationStatus==='failed'&&<p role="status">Crawl image could not load. Try Replay crawl.</p>}
+    {animationStatus==='reduced'&&<p role="status">Movement is off because your system prefers reduced motion.</p>}
     {error && <p role="alert">{error}</p>}
     </section>
   </main>;
