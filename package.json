@@ -1,6 +1,6 @@
 {
   "name": "purrductive",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "author": "Purrductive",
   "description": "A local-first screen-time tracker with a very persuasive cat.",
@@ -10,6 +10,7 @@
     "dev:web": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
+    "prestart": "npm run build",
     "start": "electron .",
     "dist": "npm run build && electron-builder --win nsis",
     "build:mac-helper": "node scripts/build-mac-helper.cjs",
